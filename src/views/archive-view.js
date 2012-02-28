@@ -3,6 +3,7 @@ var $ = jQuery = require('jquery');
 var Backbone = require('backbone');
 Backbone.sync = require('backbone-indexeddb').sync;
 var Isotope = require('../jquery.isotope.min.js');
+require('../date.extensions.js');
 var MessageView = require('./message-view.js').MessageView;
 var Archive = require('../models/archive.js').Archive;
 
@@ -14,7 +15,8 @@ var ArchiveView = Backbone.View.extend({
     events: {
     },
     initialize: function () {
-        _.bindAll(this, 'showNew', 'completePage', 'loadNext');
+        window.v = this;
+        _.bindAll(this, 'showNew', 'completePage', 'loadNext', 'addMark');
         $(document).scroll(this.completePage);
 
         $('#container').isotope({
@@ -29,6 +31,15 @@ var ArchiveView = Backbone.View.extend({
         this.loaded = this.toLoad;
         this.collection.bind('add', this.showNew);
         this.loadNext();
+    },
+    addMark: function(time) {
+        var mark = $("<div class='mark'>" + time.toRelativeTime()  + "</div>");
+        mark.css("top", $("#container").height()+"px");
+        mark.click(function() {
+            mark.css("right", "-200px");
+        })
+        $("#container").append(mark);
+        this.markShowed = true;
     },
     completePage: function () {
         if ($("#container").height() < $(window).height()) {
@@ -48,6 +59,10 @@ var ArchiveView = Backbone.View.extend({
         }
     },
     showNew: function (message) {
+        var bookmark = new Date(new Date().getTime() - 1000 * 60 * 60);
+        if(message.get('createdAt') < bookmark && ! this.markShowed) {
+            this.addMark(bookmark);
+        }
         this.upperDound = message.attributes.createdAt;
         this.loaded++;
         if(message.attributes.state !== "down-ed" && Math.ceil(message.attributes.relevance * 4) > 1) {

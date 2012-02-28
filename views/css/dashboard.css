@@ -301,4 +301,15 @@ p.darkened {
     background-image: url('../images/share.png');
 }
 
+.mark {
+    background: rgba(0,0,20,.70);
+    color: yellow;
+    position: absolute;
+    padding: 10px;
+    right: 0;
+    z-index: 1000;
+    width: 250px;
+    margin-right: -10px;
+    font-weight: bold;
+}
 
