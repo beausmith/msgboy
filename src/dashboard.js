@@ -12,6 +12,9 @@ Msgboy.bind("loaded", function () {
         el: $("#archive"),
         collection: archive,
     });
+    
+    var lastMark = Msgboy.inbox.attributes.lastMark;
+    Msgboy.inbox.save({lastMark: new Date().getTime()});
 
     // The modalShareView Object.
     var modalShareView = new ModalShareView({
@@ -23,10 +26,16 @@ Msgboy.bind("loaded", function () {
         modalShareView.showForMessage(message);
     });
 
+    archive.bind("add", function(message) {
+        if(lastMark && message.get('createdAt') < lastMark) {
+            archiveView.addMark(new Date(lastMark));
+        }
+    });
+
     // Refresh the page! Maybe it would actually be fancier to add the elements to the archive and then push them in front. TODO
     $("#new_messages").click(function () {
         window.location.reload(true);
-    }) 
+    });
 
     // Listening to the events from the background page.
     chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {

@@ -11815,6 +11815,7 @@ var $ = jQuery = require('jquery');
 var Backbone = require('backbone');
 var Subscriptions = require('./models/subscription.js').Subscriptions;
 var Subscription = require('./models/subscription.js').Subscription;
+var Inbox = require('./models/inbox.js').Inbox;
 
 if (typeof Msgboy === "undefined") {
     var Msgboy = {};
@@ -11879,7 +11880,7 @@ Msgboy.connectionTimeout = null;
 Msgboy.reconnectDelay = 1;
 Msgboy.connection = null;
 Msgboy.infos = {};
-Msgboy.inbox = null;
+Msgboy.inbox = new Inbox();
 Msgboy.reconnectionTimeout = null;
 
 // Returns the environment in which this msgboy is running
@@ -11901,7 +11902,12 @@ Msgboy.run =  function () {
     window.onload = function () {
         chrome.management.get(chrome.i18n.getMessage("@@extension_id"), function (extension_infos) {
             Msgboy.infos = extension_infos;
-            Msgboy.trigger("loaded");
+            Msgboy.inbox = new Inbox();
+            Msgboy.inbox.fetch({
+                success: function() {
+                    Msgboy.trigger("loaded");
+                }
+            });
         });
     }
 };
@@ -14979,36 +14985,60 @@ var msgboyDatabase = {
 exports.msgboyDatabase = msgboyDatabase
 });
 
-require.define("/models/archive.js", function (require, module, exports, __dirname, __filename) {
+require.define("/models/inbox.js", function (require, module, exports, __dirname, __filename) {
 var $ = jQuery = require('jquery');
 var Backbone = require('backbone');
 Backbone.sync = require('backbone-indexeddb').sync;
 var msgboyDatabase = require('./database.js').msgboyDatabase;
+var Message = require('./message.js').Message;
 
-var Archive = Backbone.Collection.extend({
-    storeName: "messages",
+var Inbox = Backbone.Model.extend({
+    storeName: "inbox",
     database: msgboyDatabase,
-
+    defaults: {
+        id: "1",
+        options: {
+            relevance: 1.0,
+            pinMsgboy: false
+        }
+    },
     initialize: function () {
-        this.model = require('./message.js').Message; // This avoids recursion in requires
     },
-    comparator: function (message) {
-        return - (message.get('createdAt'));
+
+    setup: function (username, token) {
+        this.save({
+            epoch: new Date().getTime(),
+            jid: username,
+            password: token
+        }, {
+            success: function () {
+                this.trigger("ready", this);
+                this.trigger("new", this);
+            }.bind(this),
+            error: function () {
+                this.trigger('error');
+            }.bind(this)
+        });
     },
-    next: function (number, condition) {
-        var options = {
-            conditions: condition,
-            limit: number,
-            addIndividually: true
-        };
-        this.fetch(options);
-    },
-    forFeed: function (_feed) {
-        this.fetch({conditions: {feed: _feed}});
+
+    // Fetches and prepares the inbox if needed.
+    fetchAndPrepare: function () {
+        this.fetch({
+            success: function () {
+                if (typeof(this.get('jid')) !== 'undefined' && this.get('jid') !== "" && typeof(this.get('password')) !== 'undefined' && this.get('password') !== "") {
+                    this.trigger("ready", this);
+                } else {
+                    this.trigger('error', 'Not Found');
+                }
+            }.bind(this),
+            error: function () {
+                this.trigger('error', 'Not Found');
+            }.bind(this)
+        });
     }
 });
 
-exports.Archive = Archive;
+exports.Inbox = Inbox;
 });
 
 require.define("/models/message.js", function (require, module, exports, __dirname, __filename) {
@@ -15561,6 +15591,38 @@ exports.WelcomeMessages = WelcomeMessages;
 
 });
 
+require.define("/models/archive.js", function (require, module, exports, __dirname, __filename) {
+var $ = jQuery = require('jquery');
+var Backbone = require('backbone');
+Backbone.sync = require('backbone-indexeddb').sync;
+var msgboyDatabase = require('./database.js').msgboyDatabase;
+
+var Archive = Backbone.Collection.extend({
+    storeName: "messages",
+    database: msgboyDatabase,
+
+    initialize: function () {
+        this.model = require('./message.js').Message; // This avoids recursion in requires
+    },
+    comparator: function (message) {
+        return - (message.get('createdAt'));
+    },
+    next: function (number, condition) {
+        var options = {
+            conditions: condition,
+            limit: number,
+            addIndividually: true
+        };
+        this.fetch(options);
+    },
+    forFeed: function (_feed) {
+        this.fetch({conditions: {feed: _feed}});
+    }
+});
+
+exports.Archive = Archive;
+});
+
 require.define("/views/archive-view.js", function (require, module, exports, __dirname, __filename) {
 var _ = require('underscore');
 var $ = jQuery = require('jquery');
@@ -15597,13 +15659,15 @@ var ArchiveView = Backbone.View.extend({
         this.loadNext();
     },
     addMark: function(time) {
-        var mark = $("<div class='mark'>" + time.toRelativeTime()  + "</div>");
-        mark.css("top", $("#container").height()+"px");
-        mark.click(function() {
-            mark.css("right", "-200px");
-        })
-        $("#container").append(mark);
-        this.markShowed = true;
+        if(!this.markShowed) {
+            var mark = $("<div class='mark'>" + time.toRelativeTime()  + "</div>");
+            mark.css("top", $("#container").height()+"px");
+            mark.click(function() {
+                mark.css("right", "-250px");
+            })
+            $("#container").append(mark);
+            this.markShowed = true;
+        }
     },
     completePage: function () {
         if ($("#container").height() < $(window).height()) {
@@ -15623,10 +15687,6 @@ var ArchiveView = Backbone.View.extend({
         }
     },
     showNew: function (message) {
-        var bookmark = new Date(new Date().getTime() - 1000 * 60 * 60);
-        if(message.get('createdAt') < bookmark && ! this.markShowed) {
-            this.addMark(bookmark);
-        }
         this.upperDound = message.attributes.createdAt;
         this.loaded++;
         if(message.attributes.state !== "down-ed" && Math.ceil(message.attributes.relevance * 4) > 1) {
@@ -19195,6 +19255,9 @@ Msgboy.bind("loaded", function () {
         el: $("#archive"),
         collection: archive,
     });
+    
+    var lastMark = Msgboy.inbox.attributes.lastMark;
+    Msgboy.inbox.save({lastMark: new Date().getTime()});
 
     // The modalShareView Object.
     var modalShareView = new ModalShareView({
@@ -19206,10 +19269,16 @@ Msgboy.bind("loaded", function () {
         modalShareView.showForMessage(message);
     });
 
+    archive.bind("add", function(message) {
+        if(lastMark && message.get('createdAt') < lastMark) {
+            archiveView.addMark(new Date(lastMark));
+        }
+    });
+
     // Refresh the page! Maybe it would actually be fancier to add the elements to the archive and then push them in front. TODO
     $("#new_messages").click(function () {
         window.location.reload(true);
-    }) 
+    });
 
     // Listening to the events from the background page.
     chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {

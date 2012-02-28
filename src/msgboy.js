@@ -5,6 +5,7 @@ var $ = jQuery = require('jquery');
 var Backbone = require('backbone');
 var Subscriptions = require('./models/subscription.js').Subscriptions;
 var Subscription = require('./models/subscription.js').Subscription;
+var Inbox = require('./models/inbox.js').Inbox;
 
 if (typeof Msgboy === "undefined") {
     var Msgboy = {};
@@ -69,7 +70,7 @@ Msgboy.connectionTimeout = null;
 Msgboy.reconnectDelay = 1;
 Msgboy.connection = null;
 Msgboy.infos = {};
-Msgboy.inbox = null;
+Msgboy.inbox = new Inbox();
 Msgboy.reconnectionTimeout = null;
 
 // Returns the environment in which this msgboy is running
@@ -91,7 +92,12 @@ Msgboy.run =  function () {
     window.onload = function () {
         chrome.management.get(chrome.i18n.getMessage("@@extension_id"), function (extension_infos) {
             Msgboy.infos = extension_infos;
-            Msgboy.trigger("loaded");
+            Msgboy.inbox = new Inbox();
+            Msgboy.inbox.fetch({
+                success: function() {
+                    Msgboy.trigger("loaded");
+                }
+            });
         });
     }
 };

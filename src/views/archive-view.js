@@ -33,13 +33,15 @@ var ArchiveView = Backbone.View.extend({
         this.loadNext();
     },
     addMark: function(time) {
-        var mark = $("<div class='mark'>" + time.toRelativeTime()  + "</div>");
-        mark.css("top", $("#container").height()+"px");
-        mark.click(function() {
-            mark.css("right", "-200px");
-        })
-        $("#container").append(mark);
-        this.markShowed = true;
+        if(!this.markShowed) {
+            var mark = $("<div class='mark'>" + time.toRelativeTime()  + "</div>");
+            mark.css("top", $("#container").height()+"px");
+            mark.click(function() {
+                mark.css("right", "-250px");
+            })
+            $("#container").append(mark);
+            this.markShowed = true;
+        }
     },
     completePage: function () {
         if ($("#container").height() < $(window).height()) {
@@ -59,10 +61,6 @@ var ArchiveView = Backbone.View.extend({
         }
     },
     showNew: function (message) {
-        var bookmark = new Date(new Date().getTime() - 1000 * 60 * 60);
-        if(message.get('createdAt') < bookmark && ! this.markShowed) {
-            this.addMark(bookmark);
-        }
         this.upperDound = message.attributes.createdAt;
         this.loaded++;
         if(message.attributes.state !== "down-ed" && Math.ceil(message.attributes.relevance * 4) > 1) {
